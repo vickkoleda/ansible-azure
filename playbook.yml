@@ -207,7 +207,7 @@
   # - name: Download site application
   #   win_get_url:
   #     url: "{{site_url}}"
-  #     dest: C:\inetpub\{{site_dir}}
+  #     dest: C:\inetpub\{{site_dir}}.zip
   
   # - name: Unzip site application
   #   win_unzip: 
