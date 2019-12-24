@@ -1,0 +1,257 @@
+- name: "Create Azure resources"
+  connection: local
+  hosts: localhost
+  vars_prompt:
+    - name: "location"
+      prompt: "Choose region to deploy VMs"
+      private: no
+      default: "northeurope"
+    - name: "vm_size"
+      prompt: "Choose a size for azure virtual machines"
+      private: no
+      default: "Standard_B1ms"
+    - name: "managed_disk_type"
+      prompt: "Choose a type for azure virtual disks"
+      private: no
+      default: "Standard_LRS"
+    - name: "admin_username"
+      prompt: "Choose an admin username"
+      private: no
+      default: "ansible"
+    - name: "admin_password"
+      prompt: "Choose an admin password"
+      private: yes
+      default: "Qwerty1!ansible"
+    - name: "vnet_cidr"
+      prompt: "Give a network CIDR for virtual network (large)"
+      private: no
+      default: "10.30.0.0/16"
+    - name: "snet_cidr"
+      prompt: "Give a subnet of that network"
+      private: no
+      default: "10.30.0.0/24"
+
+  vars:
+    author: Viktar_Kaliada
+    #Invoke-Expression -Command ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1')); Enable-WSManCredSSP -Role Server -Force
+    winrm_enable_script: SQBuAHYAbwBrAGUALQBFAHgAcAByAGUAcwBzAGkAbwBuACAALQBDAG8AbQBtAGEAbgBkACAAKAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABTAHkAcwB0AGUAbQAuAE4AZQB0AC4AVwBlAGIAQwBsAGkAZQBuAHQAKQAuAEQAbwB3AG4AbABvAGEAZABTAHQAcgBpAG4AZwAoACcAaAB0AHQAcABzADoALwAvAHIAYQB3AC4AZwBpAHQAaAB1AGIAdQBzAGUAcgBjAG8AbgB0AGUAbgB0AC4AYwBvAG0ALwBhAG4AcwBpAGIAbABlAC8AYQBuAHMAaQBiAGwAZQAvAGQAZQB2AGUAbAAvAGUAeABhAG0AcABsAGUAcwAvAHMAYwByAGkAcAB0AHMALwBDAG8AbgBmAGkAZwB1AHIAZQBSAGUAbQBvAHQAaQBuAGcARgBvAHIAQQBuAHMAaQBiAGwAZQAuAHAAcwAxACcAKQApADsAIABFAG4AYQBiAGwAZQAtAFcAUwBNAGEAbgBDAHIAZQBkAFMAUwBQACAALQBSAG8AbABlACAAUwBlAHIAdgBlAHIAIAAtAEYAbwByAGMAZQA=
+    
+  tasks:
+  - name: Create RG
+    azure_rm_resourcegroup:
+      name: "{{name_prefix}}-rg"
+      location: "{{location}}"
+      state: present
+      tags:
+        author: "{{author}}"
+    tags:
+    - deploy_azure
+  
+  - name: Create VNet
+    azure_rm_virtualnetwork:
+      resource_group: "{{name_prefix}}-rg"
+      name: "{{name_prefix}}-vnet"
+      address_prefixes: "{{vnet_cidr}}"
+      state: present
+      tags:
+        author: "{{author}}"
+    tags:
+    - deploy_azure
+
+  - name: Create SNet
+    azure_rm_subnet:
+      resource_group: "{{name_prefix}}-rg"
+      name: "{{name_prefix}}-snet"
+      address_prefix: "{{snet_cidr}}"
+      virtual_network: "{{name_prefix}}-vnet"
+      state: present
+    tags:
+    - deploy_azure
+
+  - name: Create PIP
+    azure_rm_publicipaddress:
+      resource_group: "{{name_prefix}}-rg"
+      allocation_method: Static
+      name: "{{name_prefix}}-pip"
+      domain_name: "{{name_prefix}}-vm"
+      state: present
+      tags:
+        author: "{{author}}"
+    tags:
+    - deploy_azure
+
+  - name: Create NSG
+    azure_rm_securitygroup:
+      resource_group: "{{name_prefix}}-rg"
+      name: "{{name_prefix}}-nsg"
+      state: present
+      rules:
+        - name: 'Allow_HTTP'
+          protocol: 'Tcp'
+          destination_port_range: 80
+          access: Allow
+          priority: 105
+          direction: Inbound
+        - name: 'Allow_RDP'
+          protocol: 'Tcp'
+          destination_port_range: 3389
+          access: Allow
+          priority: 110
+          direction: Inbound
+        - name: 'Allow_WinRM_HTTP'
+          protocol: 'Tcp'
+          destination_port_range: 5985
+          access: Allow
+          priority: 115
+          direction: Inbound
+        - name: 'Allow_WinRM_HTTPS'
+          protocol: 'Tcp'
+          destination_port_range: 5986
+          access: Allow
+          priority: 120
+          direction: Inbound
+      tags:
+        author: "{{author}}"
+    tags:
+    - deploy_azure
+
+  - name: Create NIC
+    azure_rm_networkinterface:
+      resource_group: "{{name_prefix}}-rg"
+      name: "{{name_prefix}}-nic"
+      virtual_network: "{{name_prefix}}-vnet"
+      subnet: "{{name_prefix}}-snet"
+      public_ip_name: "{{name_prefix}}-pip"
+      security_group: "{{name_prefix}}-nsg"
+      tags:
+        author: "{{author}}"
+    tags:
+    - deploy_azure
+
+  - name: Create a VM with managed disk
+    azure_rm_virtualmachine:
+      resource_group: "{{name_prefix}}-rg"
+      name: "{{name_prefix}}-vm"
+      managed_disk_type: "{{managed_disk_type}}"
+      admin_username: "{{admin_username}}"
+      admin_password: "{{admin_password}}"
+      network_interfaces: "{{name_prefix}}-nic"
+      os_type: Windows
+      short_hostname: ansible-iis
+      image:
+        offer: WindowsServer
+        publisher: MicrosoftWindowsServer
+        sku: '2019-Datacenter'
+        version: latest
+      vm_size: "{{vm_size}}"
+    register: iis_vm
+    tags:
+    - deploy_azure
+
+  - name: create Azure vm extension to enable HTTPS WinRM listener
+    azure_rm_virtualmachine_extension:
+      name: winrm-extension
+      resource_group: "{{name_prefix}}-rg"
+      virtual_machine_name: "{{name_prefix}}-vm"
+      publisher: Microsoft.Compute
+      virtual_machine_extension_type: CustomScriptExtension
+      type_handler_version: 1.9
+      settings: '{"commandToExecute": "powershell.exe -ExecutionPolicy ByPass -EncodedCommand {{winrm_enable_script}}"}'
+      auto_upgrade_minor_version: true
+    tags:
+    - deploy_azure
+
+  - name: wait for the WinRM port to come online
+    wait_for:
+      port: 5986
+      host: '{{azure_vm.properties.networkProfile.networkInterfaces[0].properties.ipConfigurations[0].properties.publicIPAddress.properties.ipAddress}}'
+      timeout: 600
+    tags: 
+    - deploy_azure
+
+  - debug: var=iis_vm
+    tags:
+    - never
+    - debug
+
+  - add_host:
+      hostname: "{{item.ansible_facts.azure_vm.name}}"
+      ansible_host: "{{item.ansible_facts.azure_vm.properties.networkProfile.networkInterfaces[0].properties.ipConfigurations[0].properties.publicIPAddress.properties.ipAddress}}"
+      ansible_connection: winrm
+      ansible_winrm_transport: basic
+      ansible_user: "{{admin_username}}"
+      ansible_password: "{{admin_password}}"
+      ansible_winrm_server_cert_validation: ignore
+      groups:
+      - iis
+    with_items:
+    - "{{iis_vm}}"
+    loop_control: 
+      label: "{{item.ansible_facts.azure_vm.name}}"
+    changed_when: no
+
+  - debug: var=groups['iis']
+    tags:
+    - never
+    - debug
+
+- name: Check connection to host
+  hosts: iis
+  tasks:
+  - name: Install IIS 
+    win_feature:
+      name: Web-Server
+      state: present
+      include_management_tools: yes
+
+  # - name: Download site application
+  #   win_get_url:
+  #     url: "{{site_url}}"
+  #     dest: C:\inetpub\{{site_dir}}
+  
+  # - name: Unzip site application
+  #   win_unzip: 
+  #     src: C:\inetpub\{{site_dir}}.zip
+  #     dest: C:\inetpub\
+  #     creates: C:\inetpub\{{site_dir}}
+
+  # - name: IIS site
+  #   win_iis_website:
+  #     name: hello-world
+  #     state: started
+  #     port: 80
+  #     physical_path: "C:\\inetpub\\{{site_dir}}\\html-docs-hello-world-master"
+  
+  - name: Install git
+    win_chocolatey:
+      name: git
+      state: present
+
+  - name: Clone git repo
+    win_git:
+      repo: "{{git_url}}"
+      dest: C:\inetpub\{{site_dir}}
+      branch: master
+      update: no
+      recursive: yes
+
+  - name: Remove Default Web Site
+    win_iis_website:
+      name: "Default Web Site"
+      state: absent
+
+  - name: IIS site
+    win_iis_website:
+      name: hello-world
+      state: started
+      port: 80
+      physical_path: "C:\\inetpub\\{{site_dir}}"
+
+  - name: Delete a resource group
+    hosts: localhost
+    azure_rm_resourcegroup:
+      name: "{{name_prefix}}-rg"
+      force_delete_nonempty: yes
+      state: absent
+    tags:
+    - delete_azure

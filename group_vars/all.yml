@@ -1,0 +1,4 @@
+name_prefix: ansible-winrm-lab
+git_url: https://github.com/Azure-Samples/html-docs-hello-world.git
+site_url: https://codeload.github.com/Azure-Samples/html-docs-hello-world/zip/master
+site_dir: hello-world
